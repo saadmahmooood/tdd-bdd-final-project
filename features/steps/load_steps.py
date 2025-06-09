@@ -22,23 +22,22 @@ Steps file for products.feature
 For information on Waiting until elements are present in the HTML see:
     https://selenium-python.readthedocs.io/waits.html
 """
-import requests
 from behave import given
+import requests
+from service import status
 
-# HTTP Return Codes
-HTTP_200_OK = 200
-HTTP_201_CREATED = 201
-HTTP_204_NO_CONTENT = 204
-
-@Given('the following products')
+@given('the following products exist:')
 def step_impl(context):
+    # clear out any existing
+    requests.delete(context.base_url + "/products")
+    # load each row
     for row in context.table:
         payload = {
-            "name": row['name'],
+            "name":        row['name'],
             "description": row['description'],
-            "price": float(row['price']),
-            "available": row['available'] in ['True', 'true', '1'],
-            "category": row['category']
+            "price":       float(row['price']),
+            "available":   row['available'].lower() in ("true","1"),
+            "category":    row['category']
         }
-        context.resp = requests.post(rest_endpoint, json=payload)
-        assert context.resp.status_code == HTTP_201_CREATED
+        resp = requests.post(context.base_url + "/products", json=payload)
+        assert resp.status_code == status.HTTP_201_CREATED

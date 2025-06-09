@@ -171,10 +171,102 @@ class TestProductRoutes(TestCase):
     # Utility functions
     ######################################################################
 
-    def get_product_count(self):
-        """save the current number of products"""
-        response = self.client.get(BASE_URL)
+    # --- CREATE ---
+    def test_create_product(self):
+        prod = ProductFactory()
+        payload = prod.serialize()
+        response = self.app.post(BASE_URL, json=payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.get_json()
+        self.assertIsNotNone(data["id"])
+        self.assertEqual(data["name"], prod.name)
+
+    # --- READ ---
+    def test_get_product(self):
+        test_product = self._create_products(1)[0]
+        response = self.app.get(f"{BASE_URL}/{test_product.id}")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.get_json()
-        # logging.debug("data = %s", data)
-        return len(data)
+        self.assertEqual(data["name"], test_product.name)
+
+    def test_get_product_not_found(self):
+        response = self.app.get(f"{BASE_URL}/0")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        data = response.get_json()
+        self.assertIn("not found", data["message"].lower())
+
+    # --- UPDATE ---
+    def test_update_product(self):
+        # create
+        prod = ProductFactory()
+        response = self.app.post(BASE_URL, json=prod.serialize())
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        new_data = response.get_json()
+        # update
+        new_data["description"] = "updated-desc"
+        response = self.app.put(f"{BASE_URL}/{new_data['id']}", json=new_data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        updated = response.get_json()
+        self.assertEqual(updated["description"], "updated-desc")
+
+    def test_update_product_not_found(self):
+        payload = ProductFactory().serialize()
+        response = self.app.put(f"{BASE_URL}/0", json=payload)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    # --- DELETE ---
+    def test_delete_product(self):
+        prods = self._create_products(3)
+        count_before = self.get_product_count()
+        target = prods[0]
+        response = self.app.delete(f"{BASE_URL}/{target.id}")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(self.get_product_count(), count_before - 1)
+        # confirm 404 on read
+        response = self.app.get(f"{BASE_URL}/{target.id}")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    # --- LIST ALL ---
+    def test_get_product_list(self):
+        self._create_products(5)
+        response = self.app.get(BASE_URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.get_json()
+        self.assertEqual(len(data), 5)
+
+    # --- FILTER BY NAME ---
+    def test_query_by_name(self):
+        prods = self._create_products(5)
+        test_name = prods[0].name
+        expected_count = sum(1 for p in prods if p.name == test_name)
+        qs = f"name={quote_plus(test_name)}"
+        response = self.app.get(f"{BASE_URL}?{qs}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.get_json()
+        self.assertEqual(len(data), expected_count)
+        for item in data:
+            self.assertEqual(item["name"], test_name)
+
+    # --- FILTER BY CATEGORY ---
+    def test_query_by_category(self):
+        prods = self._create_products(10)
+        cat = prods[0].category
+        expected = [p for p in prods if p.category == cat]
+        qs = f"category={cat.name}"
+        response = self.app.get(f"{BASE_URL}?{qs}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.get_json()
+        self.assertEqual(len(data), len(expected))
+        for item in data:
+            self.assertEqual(item["category"], cat.name)
+
+    # --- FILTER BY AVAILABILITY ---
+    def test_query_by_availability(self):
+        prods = self._create_products(10)
+        expected = [p for p in prods if p.available]
+        response = self.app.get(f"{BASE_URL}?available=true")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.get_json()
+        self.assertEqual(len(data), len(expected))
+        for item in data:
+            self.assertTrue(item["available"])
